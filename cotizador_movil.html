@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>Cotizador</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3f4f6;color:#111827}
+.wrap{max-width:680px;margin:auto;padding:16px}
+.card{background:white;border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:0 4px 18px rgba(0,0,0,.07)}
+h1{font-size:25px;margin:0 0 5px}.sub{color:#6b7280;font-size:14px;margin-bottom:18px}
+label{display:block;font-size:13px;font-weight:700;margin:12px 0 6px}
+input,select,button,textarea{width:100%;font:inherit;border-radius:12px}
+input,select{padding:13px;border:1px solid #d1d5db;background:#fff}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{border:0;padding:14px;font-weight:700;cursor:pointer}.primary{background:#111827;color:#fff}.secondary{background:#e5e7eb;color:#111827}
+.item{border:1px solid #e5e7eb;border-radius:14px;padding:14px;margin-top:12px;position:relative}
+.item h3{margin:0 0 4px;font-size:16px}.muted{font-size:12px;color:#6b7280}
+.remove{position:absolute;right:10px;top:10px;width:auto;padding:7px 10px;border:0;border-radius:9px;background:#fee2e2;color:#991b1b}
+.total{font-size:30px;font-weight:800;margin:8px 0}.note{font-size:12px;color:#6b7280}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.msg{white-space:pre-wrap;background:#f9fafb;border:1px solid #e5e7eb;padding:13px;border-radius:12px;font-size:14px;line-height:1.45}
+@media(max-width:430px){.wrap{padding:10px}.card{padding:14px}.row{grid-template-columns:1fr}.actions{grid-template-columns:1fr}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>🧾 Cotizador</h1>
+    <div class="sub">Cotiza rápido desde el teléfono</div>
+    <label>Cliente</label><input id="cliente" placeholder="Nombre del cliente">
+    <label>Dirección / comuna</label><input id="direccion" placeholder="Dirección o comuna">
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0">Productos</h2>
+    <div id="items"></div>
+    <button class="btn secondary" style="margin-top:12px" onclick="agregarItem()">+ Agregar otra cortina</button>
+  </div>
+
+  <div class="card">
+    <div class="note">Total de la cotización</div>
+    <div class="total" id="total">$0</div>
+    <div class="note" id="rango"></div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn primary" onclick="generarMensaje()">Generar mensaje</button>
+      <button class="btn secondary" onclick="limpiar()">Nueva cotización</button>
+    </div>
+  </div>
+
+  <div class="card" id="mensajeCard" style="display:none">
+    <h2 style="margin:0 0 10px">📲 Mensaje listo</h2>
+    <div class="msg" id="mensaje"></div>
+    <button class="btn primary" style="margin-top:10px" onclick="copiarMensaje()">Copiar mensaje</button>
+    <div id="copiado" class="note" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<script>
+const DATA={
+ Blackout:{alto:200,precios:[[60,9850],[90,14250],[120,19200],[150,24000],[180,28500],[200,32250]]},
+ Screen:{alto:240,precios:[[80,13950],[100,17000],[120,20400],[140,23700],[150,24800],[160,26400],[180,29300],[200,29700]]},
+ Duo:{alto:240,precios:[[80,14900],[100,18600],[120,22350],[150,27900],[180,33500],[200,37200],[220,40900]]}
+};
+const AJUSTE=5000, VEN=18000, FACTOR=1.30;
+let items=[];
+
+function money(n){return "$"+Math.round(n).toLocaleString("es-CL")}
+function agregarItem(model="Blackout"){
+ items.push({id:Date.now()+Math.random(),model,ancho:"",cantidad:1});
+ render();
+}
+function quitar(id){items=items.filter(x=>x.id!==id);render();}
+function render(){
+ const box=document.getElementById("items"); box.innerHTML="";
+ items.forEach((it,i)=>{
+  const d=document.createElement("div");d.className="item";
+  d.innerHTML=`<button class="remove" onclick="quitar(${it.id})">Eliminar</button>
+  <h3>Cortina ${i+1}</h3>
+  <label>Modelo</label>
+  <select onchange="cambiar(${it.id},'model',this.value)">
+    ${Object.keys(DATA).map(m=>`<option ${m===it.model?'selected':''}>${m}</option>`).join("")}
+  </select>
+  <div class="row">
+   <div><label>Ancho (cm)</label><input type="number" min="1" inputmode="numeric" value="${it.ancho}" placeholder="Ej. 135" onchange="cambiar(${it.id},'ancho',this.value)"></div>
+   <div><label>Alto (cm)</label><input value="${DATA[it.model].alto}" disabled></div>
+  </div>
+  <div class="row">
+   <div><label>Cantidad</label><input type="number" min="1" inputmode="numeric" value="${it.cantidad}" onchange="cambiar(${it.id},'cantidad',this.value)"></div>
+   <div style="display:flex;align-items:end"><div class="note" id="res-${it.id}"></div></div>
+  </div>`;
+  box.appendChild(d); actualizarItem(it);
+ });
+ actualizarTotal();
+}
+function cambiar(id,k,v){const it=items.find(x=>x.id===id);if(!it)return;it[k]=k==="cantidad"?Math.max(1,parseInt(v||1)):v;render();}
+function calcular(it){
+ const ancho=Number(it.ancho), arr=DATA[it.model].precios;
+ if(!ancho)return {ok:false};
+ let applied=arr.find(x=>x[0]>=ancho);
+ if(!applied)return {ok:false,out:true};
+ const ajuste=applied[0]===ancho?0:AJUSTE;
+ const cantidad=Number(it.cantidad||1);
+ const costoProducto=(applied[1]+ajuste)*cantidad;
+ const subtotalConMargen=costoProducto*FACTOR;
+ return {ok:true,out:false,applied:applied[0],base:applied[1],ajuste,unit:(applied[1]+ajuste)*FACTOR,total:subtotalConMargen};
+}
+function actualizarItem(it){
+ const r=calcular(it), el=document.getElementById("res-"+it.id);
+ if(!el)return;
+ if(r.out)el.textContent="MEDIDA FUERA DE RANGO";
+ else if(r.ok)el.textContent=`Medida aplicada: ${r.applied} cm · Total: ${money(r.total)}`;
+ else el.textContent="";
+}
+function actualizarTotal(){
+ let total=0,out=false,hayValido=false;
+ items.forEach(it=>{const r=calcular(it);if(r.out)out=true;else if(r.ok){total+=r.total;hayValido=true;}});
+ if(hayValido) total+=VEN;
+ document.getElementById("total").textContent=money(total);
+ document.getElementById("rango").textContent=out?"Hay una medida fuera de rango. Revísala antes de enviar.":"";
+}
+function generarMensaje(){
+ let cliente=document.getElementById("cliente").value.trim(),dir=document.getElementById("direccion").value.trim();
+ let lines=["Hola"+(cliente?" "+cliente:"")+", te envío la cotización solicitada:",""];
+ let total=0, valido=true;
+ items.forEach((it,i)=>{
+  const r=calcular(it); if(!r.ok||r.out){valido=false;return;}
+  lines.push(`• ${it.model} — ${it.ancho} x ${DATA[it.model].alto} cm — Cantidad: ${it.cantidad}`);
+  lines.push(`  Valor: ${money(r.total)}`);
+  total+=r.total;
+ });
+ if(!items.length)valido=false;
+ if(!valido){alert("Completa las medidas y revisa que ninguna supere el máximo.");return;}
+ lines.push("",`TOTAL: ${money(total)}`);
+ if(dir)lines.push(``, `Dirección/comuna: ${dir}`);
+ lines.push("","Quedo atento/a a cualquier consulta.");
+ document.getElementById("mensaje").textContent=lines.join("\n");
+ document.getElementById("mensajeCard").style.display="block";
+ document.getElementById("copiado").textContent="";
+ document.getElementById("mensajeCard").scrollIntoView({behavior:"smooth"});
+}
+async function copiarMensaje(){
+ const t=document.getElementById("mensaje").textContent;
+ try{await navigator.clipboard.writeText(t);document.getElementById("copiado").textContent="✓ Mensaje copiado. Ya puedes pegarlo en WhatsApp."}
+ catch(e){alert("No se pudo copiar automáticamente. Mantén presionado el texto para copiarlo.");}
+}
+function limpiar(){
+ items=[];document.getElementById("cliente").value="";document.getElementById("direccion").value="";
+ document.getElementById("mensajeCard").style.display="none";agregarItem();
+}
+agregarItem();
+</script>
+</body>
+</html>
