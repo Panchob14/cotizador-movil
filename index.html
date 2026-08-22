@@ -173,7 +173,8 @@ function generarMensaje(){
  });
  if(!items.length)valido=false;
  if(!valido){alert("Completa las medidas y revisa que ninguna supere el máximo.");return;}
- lines.push("",`TOTAL: ${money(total)}`);
+ total += VEN;
+  lines.push("",`TOTAL: ${money(total)}`);
  if(dir)lines.push(``, `Dirección/comuna: ${dir}`);
  lines.push(
   "",
